@@ -774,6 +774,42 @@ reader, err := lpk.OpenReaderAt(ctx, src, size)
 
 `Reader` 可以列出条目、读取 Manifest 和 `package.yml`、打开单个文件、安全解压，以及合并得到有效 Manifest。归档解析支持可配置的大小、路径和条目数量限制。
 
+`project.Restore` 可以进一步把发布包转换为可再次 `build.Build` 的项目目录；
+`project.RestoreWithOptions(..., project.RestoreOptions{PreferUpstreamImages: true})`
+会使用 Manifest 中明确写出的 `# upstream:` 镜像注释。懒猫 Registry 的 digest
+本身不包含可逆的上游版本，未提供注释时不会猜测镜像地址或版本。
+
+#### 从商店 LPK 解包
+
+公共商店 API 返回的 `Version.PackagePath` 可以先通过
+`official.Client.ApplicationDownloadURL` 解析为下载地址，再交给 `lpk.Open`
+和 `Reader.Extract`：
+
+```go
+request, err := http.NewRequestWithContext(ctx, http.MethodGet, downloadURL, nil)
+if err != nil {
+    return err
+}
+response, err := http.DefaultClient.Do(request)
+if err != nil {
+    return err
+}
+defer response.Body.Close()
+reader, err := lpk.Open(ctx, response.Body)
+if err != nil {
+    return err
+}
+defer reader.Close()
+if err := reader.Extract(ctx, "restored-project"); err != nil {
+    return err
+}
+```
+
+解包目录包含 LPK 中实际发布的 `manifest.yml`、`package.yml`、静态文件、
+OCI 镜像层和资源导出，可以继续用 `inspect` 或 `lint` 检查。它是发布包的还原，
+不等同于恢复原始源码项目：未打进 LPK 的源码、Dockerfile、`lzc-build.yml`
+和构建脚本无法恢复；内嵌镜像也不会自动转换成 Dockerfile。
+
 ### Lint
 
 检查解压后的 LPK 根目录：

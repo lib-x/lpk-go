@@ -806,6 +806,46 @@ reader, err := lpk.OpenReaderAt(ctx, src, size)
 
 `Reader` can list entries, read the Manifest and `package.yml`, open a single entry, extract safely, and return the effective merged Manifest. Archive parsing supports configurable size, path, and entry-count limits.
 
+`project.Restore` converts a published package into a project directory that can
+be passed to `build.Build` again. `project.RestoreWithOptions(...,
+project.RestoreOptions{PreferUpstreamImages: true})` uses only explicit
+`# upstream:` image comments from the Manifest. A LazyCat Registry digest does
+not encode a reversible upstream tag or version, so the restore operation never
+guesses an image reference when that comment is absent.
+
+#### Extracting a store LPK
+
+The `Version.PackagePath` returned by the public store API can be resolved with
+`official.Client.ApplicationDownloadURL`, then downloaded and passed to
+`lpk.Open` and `Reader.Extract`:
+
+```go
+request, err := http.NewRequestWithContext(ctx, http.MethodGet, downloadURL, nil)
+if err != nil {
+    return err
+}
+response, err := http.DefaultClient.Do(request)
+if err != nil {
+    return err
+}
+defer response.Body.Close()
+reader, err := lpk.Open(ctx, response.Body)
+if err != nil {
+    return err
+}
+defer reader.Close()
+if err := reader.Extract(ctx, "restored-project"); err != nil {
+    return err
+}
+```
+
+The extracted directory contains the published `manifest.yml`, `package.yml`,
+static files, OCI image layers, and resource exports, and can be inspected with
+`inspect` or `lint`. This restores the published package, not the original
+source project: source files, Dockerfiles, `lzc-build.yml`, and build scripts
+that were not included in the LPK cannot be reconstructed, and embedded images
+are not converted back into Dockerfiles.
+
 ### Lint
 
 Check an extracted LPK root:
